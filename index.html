@@ -492,7 +492,7 @@
      "production_run","production_input","production_output","products","materials","production_machines","supervisors"].forEach(function(table){
       var ch = sb.channel("rt-"+table)
         .on("postgres_changes", { event:"*", schema:"public", table:table }, function(){
-          loadAll().then(render);
+          realtimeRefresh();
         })
         .subscribe();
       channels.push(ch);
@@ -1811,6 +1811,28 @@
     }
   }
 
+  // Pembaruan dari perangkat lain tidak boleh menghapus isian yang sedang diketik.
+  var pendingRefresh = false;
+  function isTypingInApp(){
+    var a = document.activeElement;
+    if(!a || !a.tagName) return false;
+    if(["INPUT","TEXTAREA","SELECT"].indexOf(a.tagName) === -1) return false;
+    var app = document.getElementById("app");
+    return !!(app && app.contains(a));
+  }
+  function realtimeRefresh(){
+    return loadAll().then(function(){
+      if(isTypingInApp()){ pendingRefresh = true; return; }   // tunda sampai selesai mengetik
+      pendingRefresh = false;
+      render();
+    });
+  }
+  function flushPendingRefresh(){
+    if(!pendingRefresh || isTypingInApp()) return;
+    pendingRefresh = false;
+    render();
+  }
+
   function wireEvents(){
     document.getElementById("nav").addEventListener("click", function(e){
       var btn = e.target.closest("button.tab-btn");
@@ -1821,6 +1843,10 @@
       location.reload();
     });
     var app = document.getElementById("app");
+    app.addEventListener("focusout", function(){
+      // beri jeda sebentar supaya perpindahan antar kolom tidak dianggap selesai
+      setTimeout(flushPendingRefresh, 150);
+    });
     app.addEventListener("submit", handleFormSubmit);
     app.addEventListener("click", handleClick);
     app.addEventListener("change", handleChange);
