@@ -1141,6 +1141,20 @@
     return html + '</tbody></table></div></div>';
   }
 
+  // Nama supervisor diisi otomatis dari akun yang sedang login,
+  // supaya tidak ada catatan tanpa nama kalau petugas lupa mengetik.
+  function defaultSupervisorName(){
+    var raw = (profile && profile.display_name ? profile.display_name : "").trim();
+    if(!raw && session && session.user && session.user.email){
+      raw = String(session.user.email).split("@")[0];
+    }
+    if(!raw) return "";
+    var hit = state.supervisors.find(function(x){
+      return String(x.name).toLowerCase() === raw.toLowerCase();
+    });
+    return hit ? hit.name : (raw.charAt(0).toUpperCase() + raw.slice(1));
+  }
+
   function renderProduksiForm(){
     var d = prodDraft;
     var html = '<div class="card"><h3 style="margin-top:0;">Catatan produksi harian</h3><form data-form="produksi-run">';
@@ -1150,7 +1164,7 @@
             machinesForLine().map(function(m){
               return '<option value="'+escapeHtml(m.name)+'"'+(m.name===d.machine?' selected':'')+'>'+escapeHtml(m.name)+'</option>';
             }).join("")+'</select></div>';
-    html += '<div class="field"><label>Supervisor</label><input type="text" name="supervisor" list="spv-list" value="'+escapeHtml(d.supervisor||"")+'" placeholder="nama supervisor">'+
+    html += '<div class="field"><label>Supervisor</label><input type="text" name="supervisor" list="spv-list" value="'+escapeHtml(d.supervisor || defaultSupervisorName())+'" placeholder="nama supervisor">'+
             '<datalist id="spv-list">'+state.supervisors.map(function(x){ return '<option value="'+escapeHtml(x.name)+'">'; }).join("")+'</datalist></div>';
     html += '</div>';
 
