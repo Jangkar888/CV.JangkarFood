@@ -997,11 +997,19 @@
   }
 
   // rekap baris detail (bahan atau hasil) per jenis produksi
+  // "1.650 sak · 1.005 kg" — ringkasan jumlah menurut satuannya masing-masing
+  function unitSummary(units){
+    var keys = Object.keys(units).sort();
+    if(!keys.length) return "";
+    return keys.map(function(u){
+      return (Math.round(units[u]*100)/100).toString().replace(".", ",") + " " + u;
+    }).join(" · ");
+  }
   function rincianTable(title, runs, rowsOf, nameKey, firstCol){
     var byLine = {}, lineOrder = [];
     runs.forEach(function(r){
       var L = r.line || "—";
-      if(!(L in byLine)){ byLine[L] = { items:{}, order:[], kg:0 }; lineOrder.push(L); }
+      if(!(L in byLine)){ byLine[L] = { items:{}, order:[], kg:0, units:{} }; lineOrder.push(L); }
       var bucket = byLine[L];
       rowsOf(r.id).forEach(function(x){
         var nm = x[nameKey] || "—";
@@ -1009,6 +1017,8 @@
         bucket.items[nm].qty += Number(x.quantity||0);
         bucket.items[nm].kg  += Number(x.kg_total||0);
         bucket.kg            += Number(x.kg_total||0);
+        var u = x.unit || "";
+        if(u){ bucket.units[u] = (bucket.units[u]||0) + Number(x.quantity||0); }
       });
     });
     lineOrder.sort();
@@ -1016,12 +1026,14 @@
     var anything = lineOrder.some(function(L){ return byLine[L].order.length; });
     if(!anything) return html + '<div class="empty">Tidak ada data.</div></div>';
     html += '<div class="table-wrap"><table><thead><tr><th>'+escapeHtml(firstCol)+'</th><th>Jumlah</th><th>Total berat</th></tr></thead><tbody>';
-    var grand = 0;
+    var grand = 0, grandUnits = {};
     lineOrder.forEach(function(L){
       var bucket = byLine[L];
       if(!bucket.order.length) return;
       grand += bucket.kg;
-      html += '<tr class="cat-row"><td colspan="3">'+escapeHtml(L)+' — '+fmtKg(bucket.kg)+'</td></tr>';
+      Object.keys(bucket.units).forEach(function(u){ grandUnits[u] = (grandUnits[u]||0) + bucket.units[u]; });
+      var us = unitSummary(bucket.units);
+      html += '<tr class="cat-row"><td colspan="3">'+escapeHtml(L)+' — '+(us ? escapeHtml(us)+' — ' : '')+fmtKg(bucket.kg)+'</td></tr>';
       bucket.order.slice().sort().forEach(function(nm){
         var it = bucket.items[nm];
         var qty = (Math.round(it.qty*100)/100).toString().replace(".", ",");
@@ -1030,7 +1042,8 @@
                 '<td>'+fmtKg(it.kg)+'</td></tr>';
       });
     });
-    html += '<tr><td><strong>Total semua jenis</strong></td><td></td><td><strong>'+fmtKg(grand)+'</strong></td></tr>';
+    var gus = unitSummary(grandUnits);
+    html += '<tr><td><strong>Total semua jenis</strong></td><td><strong>'+escapeHtml(gus)+'</strong></td><td><strong>'+fmtKg(grand)+'</strong></td></tr>';
     return html + '</tbody></table></div></div>';
   }
 
