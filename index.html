@@ -1306,15 +1306,73 @@
     return { rows:bal, order:order };
   }
 
+  var depoPayOutlet = "";
+
+  // Pembayaran dan retur dipakai menutup faktur mulai dari yang paling lama.
+  function outletInvoices(outlet){
+    var o = String(outlet||"").trim().toLowerCase();
+    if(!o) return [];
+    var sales = state.depoSales.filter(function(r){
+      return String(r.outlet||"").trim().toLowerCase() === o && (r.kind||"jual") !== "retur";
+    }).slice().sort(function(a,b){ return String(a.trx_date).localeCompare(String(b.trx_date)); });
+
+    var pool = 0;
+    state.depoPayments.forEach(function(r){
+      if(String(r.outlet||"").trim().toLowerCase() === o) pool += Number(r.amount||0);
+    });
+    state.depoSales.forEach(function(r){
+      if(String(r.outlet||"").trim().toLowerCase() === o && (r.kind||"jual") === "retur") pool += saleTotal(r.id);
+    });
+
+    return sales.map(function(r){
+      var total = saleTotal(r.id);
+      var paid = Math.min(pool, total);
+      pool -= paid;
+      return { sale:r, total:total, paid:paid, sisa:total - paid };
+    });
+  }
+
   function renderDepoBayar(){
     var html = '<div class="card"><h3 style="margin-top:0;">Catat pembayaran</h3><form data-form="depo-bayar"><div class="form-grid">';
     html += '<div class="field"><label>Tanggal</label><input type="date" name="payDate" value="'+todayIso()+'"></div>';
-    html += '<div class="field"><label>Outlet</label><input type="text" name="outlet" list="depo-outlet-list2" placeholder="nama outlet">'+
+    html += '<div class="field"><label>Outlet</label><input type="text" name="outlet" data-role="pay-outlet" list="depo-outlet-list2" value="'+escapeHtml(depoPayOutlet)+'" placeholder="nama outlet">'+
             '<datalist id="depo-outlet-list2">'+state.depoOutlets.map(function(x){ return '<option value="'+escapeHtml(x.name)+'">'; }).join("")+'</datalist></div>';
+    html += '<div class="field"><label>Cara bayar</label><select name="method"><option value="tunai">Tunai</option><option value="transfer">Transfer</option></select></div>';
     html += '<div class="field"><label>Jumlah bayar</label><input type="number" step="1" min="0" name="amount" placeholder="0"></div>';
     html += '<div class="field"><label>Catatan</label><input type="text" name="notes" placeholder="opsional"></div>';
     html += '<div class="field"><button class="btn" type="submit">Simpan pembayaran</button></div>';
-    html += '</div></form></div>';
+    html += '</div></form>';
+
+    // daftar faktur milik outlet yang dipilih
+    if(depoPayOutlet){
+      var invs = outletInvoices(depoPayOutlet);
+      var open = invs.filter(function(x){ return x.sisa > 0.5; });
+      html += '<h4 style="margin:18px 0 6px;">Faktur ' + escapeHtml(depoPayOutlet) + '</h4>';
+      if(!invs.length){
+        html += '<div class="empty">Belum ada penjualan untuk outlet ini.</div>';
+      } else if(!open.length){
+        html += '<div class="empty">Semua faktur outlet ini sudah lunas.</div>';
+      } else {
+        html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Barang</th><th>Nilai faktur</th><th>Sudah dibayar</th><th>Sisa</th><th></th></tr></thead><tbody>';
+        open.forEach(function(x){
+          var items = state.depoSaleItems.filter(function(y){ return y.sale_id===x.sale.id; });
+          html += '<tr><td>'+escapeHtml(fmtTanggal(x.sale.trx_date))+'</td>'+
+            '<td>'+items.map(function(y){ return escapeHtml(y.product)+' <span class="subtext">'+(Math.round(Number(y.quantity||0)*100)/100)+' '+escapeHtml(y.unit||"")+'</span>'; }).join('<br>')+'</td>'+
+            '<td>'+escapeHtml(fmtRupiah(x.total))+'</td>'+
+            '<td>'+escapeHtml(fmtRupiah(x.paid))+'</td>'+
+            '<td style="color:var(--danger);font-weight:600;">'+escapeHtml(fmtRupiah(x.sisa))+'</td>'+
+            '<td><button class="btn secondary" type="button" data-action="pay-fill" data-amount="'+x.sisa+'" style="padding:5px 10px;font-size:12px;">Isi jumlah</button></td></tr>';
+        });
+        var totalSisa = open.reduce(function(a,x){ return a + x.sisa; }, 0);
+        html += '<tr><td><strong>Total sisa</strong></td><td></td><td></td><td></td>'+
+                '<td style="color:var(--danger);"><strong>'+escapeHtml(fmtRupiah(totalSisa))+'</strong></td>'+
+                '<td><button class="btn secondary" type="button" data-action="pay-fill" data-amount="'+totalSisa+'" style="padding:5px 10px;font-size:12px;">Isi semua</button></td></tr>';
+        html += '</tbody></table></div>';
+      }
+    } else {
+      html += '<p class="subtext" style="margin-top:14px;">Pilih outlet untuk melihat faktur yang belum lunas.</p>';
+    }
+    html += '</div>';
 
     var b = outletBalances();
     html += '<div class="card"><h3 style="margin-top:0;">Saldo per outlet</h3>';
@@ -1334,9 +1392,10 @@
     html += '<div class="card"><h3 style="margin-top:0;">Pembayaran terakhir</h3>';
     var pays = state.depoPayments.slice(0,40);
     if(!pays.length) return html + '<div class="empty">Belum ada pembayaran.</div></div>';
-    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Outlet</th><th>Jumlah</th><th>Catatan</th><th></th></tr></thead><tbody>';
+    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Outlet</th><th>Cara bayar</th><th>Jumlah</th><th>Catatan</th><th></th></tr></thead><tbody>';
     pays.forEach(function(r){
       html += '<tr><td>'+escapeHtml(fmtTanggal(r.pay_date))+'</td><td>'+escapeHtml(r.outlet||"")+'</td>'+
+        '<td>'+escapeHtml(r.method==="transfer" ? "Transfer" : "Tunai")+'</td>'+
         '<td>'+escapeHtml(fmtRupiah(r.amount))+'</td><td>'+escapeHtml(r.notes||"")+'</td>'+
         '<td>'+((isAdmin()||isOwnRow(r)) ? '<button class="btn-icon" data-action="delete-depo-bayar" data-id="'+r.id+'" title="Hapus">✕</button>' : '')+'</td></tr>';
     });
@@ -2033,10 +2092,12 @@
         await ensureOutlet(payOutlet);
         var payIns = await sb.from("depo_payment").insert({
           pay_date: data.payDate||todayIso(), outlet: payOutlet, amount: payAmt,
+          method: (data.method==="transfer") ? "transfer" : "tunai",
           notes: data.notes||"", created_by: session.user.id
         });
         if(payIns.error) throw payIns.error;
         toast("Pembayaran dicatat.");
+        depoPayOutlet = "";
         form.reset();
         await loadAll(); render();
       } else if(kind==="produksi-run"){
@@ -2119,6 +2180,11 @@
     if((el = e.target.closest('[data-action="set-plastik-sub"]'))){
       plastikSub = el.getAttribute("data-sub");
       render();
+      return;
+    }
+    if((el = e.target.closest('[data-action="pay-fill"]'))){
+      var amtEl = document.querySelector('form[data-form="depo-bayar"] [name="amount"]');
+      if(amtEl){ amtEl.value = el.getAttribute("data-amount"); amtEl.focus(); }
       return;
     }
     if((el = e.target.closest('[data-action="set-depo-sub"]'))){
@@ -2428,6 +2494,12 @@
           if(cb) cb.checked = false;
         }
       }
+      return;
+    }
+
+    if(e.target.matches && e.target.matches('[data-role="pay-outlet"]')){
+      depoPayOutlet = e.target.value;
+      render();
       return;
     }
 
