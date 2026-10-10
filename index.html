@@ -1076,9 +1076,9 @@
 
   // ---------- depo (Tasik + Garut, stok gabungan) ----------
   var depoSub = "masuk";
-  var depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", items:[] };
+  var depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", kind:"", items:[] };
 
-  function resetDepoDraft(){ depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", items:[] }; }
+  function resetDepoDraft(){ depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", kind:"", items:[] }; }
   function depoProduct(name){ return state.depoProducts.find(function(x){ return x.name===name; }); }
   function activeDepoProducts(){ return state.depoProducts.filter(function(x){ return x.active!==false; }); }
 
@@ -1108,6 +1108,8 @@
     depoDraft.outlet      = g("outlet");
     depoDraft.salesperson = g("salesperson");
     depoDraft.notes       = g("notes");
+    var kEl = f.querySelector('[name="kind"]');
+    if(kEl) depoDraft.kind = kEl.value;
     depoDraft.items.forEach(function(it){
       var pEl = f.querySelector('[data-role="depo-prod"][data-key="'+it.key+'"]');
       var qEl = f.querySelector('[data-role="depo-qty"][data-key="'+it.key+'"]');
@@ -1152,13 +1154,13 @@
   }
 
   function renderDepo(){
-    var subs = [
+    var subs = canDepoEdit() ? [
       { key:"masuk",  label:"Barang Masuk" },
       { key:"jual",   label:"Penjualan" },
       { key:"stok",   label:"Stok" },
       { key:"bayar",  label:"Pembayaran" }
-    ];
-    if(!subs.some(function(x){ return x.key===depoSub; })) depoSub = "masuk";
+    ] : [ { key:"stok", label:"Stok" } ];
+    if(!subs.some(function(x){ return x.key===depoSub; })) depoSub = subs[0].key;
     var html = '<h2>Depo Tasik + Garut</h2>';
     html += '<div class="btn-row" style="margin-bottom:16px;">' + subs.map(function(x){
       return '<button class="btn '+(x.key===depoSub?'':'secondary')+'" data-action="set-depo-sub" data-sub="'+x.key+'">'+escapeHtml(x.label)+'</button>';
@@ -1166,6 +1168,7 @@
     if(!state.depoProducts.length){
       return html + '<div class="card"><div class="empty">Daftar produk depo belum ada. Jalankan dulu supabase_depo.sql dan seed produknya.</div></div>';
     }
+    if(!canDepoEdit()) return html + renderDepoStok();
     if(depoSub==="jual")  return html + renderDepoJual();
     if(depoSub==="stok")  return html + renderDepoStok();
     if(depoSub==="bayar") return html + renderDepoBayar();
@@ -1176,20 +1179,30 @@
     var html = '<div class="card"><h3 style="margin-top:0;">Barang masuk</h3><form data-form="depo-masuk">';
     html += '<div class="form-grid">';
     html += '<div class="field"><label>Tanggal</label><input type="date" name="trxDate" value="'+escapeHtml(depoDraft.trx_date||todayIso())+'"></div>';
+    if(canDepoRetur()){
+      var k = depoDraft.kind || "masuk";
+      html += '<div class="field"><label>Jenis</label><select name="kind">'+
+              '<option value="masuk"'+(k==="masuk"?' selected':'')+'>Barang masuk dari pabrik</option>'+
+              '<option value="retur"'+(k==="retur"?' selected':'')+'>Retur ke pabrik (barang rusak)</option>'+
+              '</select><div class="subtext" style="margin-top:4px;">Retur mengurangi stok dan dihitung negatif.</div></div>';
+    }
     html += '<div class="field"><label>Catatan</label><input type="text" name="notes" value="'+escapeHtml(depoDraft.notes||"")+'" placeholder="opsional"></div>';
     html += '</div>';
     html += depoItemsBlock();
-    html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan penerimaan</button></div></form></div>';
+    html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan</button></div></form></div>';
 
     html += '<div class="card"><h3 style="margin-top:0;">Penerimaan terakhir</h3>';
     var rows = state.depoIncoming.slice(0,40);
     if(!rows.length) return html + '<div class="empty">Belum ada penerimaan.</div></div>';
-    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis barang</th><th>Total</th><th>Catatan</th><th></th></tr></thead><tbody>';
+    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Barang</th><th>Total</th><th>Catatan</th><th></th></tr></thead><tbody>';
     rows.forEach(function(r){
       var items = state.depoIncomingItems.filter(function(x){ return x.incoming_id===r.id; });
+      var isRetur = (r.kind === "retur");
+      var tot = incomingTotal(r.id) * (isRetur ? -1 : 1);
       html += '<tr><td>'+escapeHtml(fmtTanggal(r.trx_date))+'</td>'+
+        '<td>'+(isRetur ? '<span style="color:var(--danger);font-weight:600;">Retur pabrik</span>' : 'Masuk')+'</td>'+
         '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*100)/100)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
-        '<td>'+escapeHtml(fmtRupiah(incomingTotal(r.id)))+'</td>'+
+        '<td style="'+(isRetur?'color:var(--danger);':'')+'">'+escapeHtml(fmtRupiah(tot))+'</td>'+
         '<td>'+escapeHtml(r.notes||"")+'</td>'+
         '<td>'+((isAdmin()||isOwnRow(r)) ? '<button class="btn-icon" data-action="delete-depo-masuk" data-id="'+r.id+'" title="Hapus">✕</button>' : '')+'</td></tr>';
     });
@@ -1205,22 +1218,31 @@
     html += '<div class="field"><label>Outlet</label><input type="text" name="outlet" list="depo-outlet-list" value="'+escapeHtml(depoDraft.outlet||"")+'" placeholder="nama outlet">'+
             '<datalist id="depo-outlet-list">'+state.depoOutlets.map(function(x){ return '<option value="'+escapeHtml(x.name)+'">'; }).join("")+'</datalist>'+
             '<div class="subtext" style="margin-top:4px;">Outlet baru otomatis tersimpan ke daftar.</div></div>';
+    if(canDepoRetur()){
+      var ks = depoDraft.kind || "jual";
+      html += '<div class="field"><label>Jenis</label><select name="kind">'+
+              '<option value="jual"'+(ks==="jual"?' selected':'')+'>Penjualan</option>'+
+              '<option value="retur"'+(ks==="retur"?' selected':'')+'>Retur dari outlet</option>'+
+              '</select><div class="subtext" style="margin-top:4px;">Retur menambah stok dan mengurangi tagihan outlet.</div></div>';
+    }
     html += '<div class="field"><label>Catatan</label><input type="text" name="notes" value="'+escapeHtml(depoDraft.notes||"")+'" placeholder="opsional"></div>';
     html += '</div>';
     html += depoItemsBlock();
-    html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan penjualan</button></div></form></div>';
+    html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan</button></div></form></div>';
 
     html += '<div class="card"><h3 style="margin-top:0;">Penjualan terakhir</h3>';
     var rows = state.depoSales.slice(0,40);
     if(!rows.length) return html + '<div class="empty">Belum ada penjualan.</div></div>';
-    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Outlet</th><th>Sales</th><th>Barang</th><th>Total</th><th></th></tr></thead><tbody>';
+    html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Outlet</th><th>Sales</th><th>Barang</th><th>Total</th><th></th></tr></thead><tbody>';
     rows.forEach(function(r){
       var items = state.depoSaleItems.filter(function(x){ return x.sale_id===r.id; });
+      var isRet = (r.kind === "retur");
       html += '<tr><td>'+escapeHtml(fmtTanggal(r.trx_date))+'</td>'+
+        '<td>'+(isRet ? '<span style="color:var(--danger);font-weight:600;">Retur outlet</span>' : 'Jual')+'</td>'+
         '<td>'+escapeHtml(r.outlet||"")+'</td>'+
         '<td>'+escapeHtml(r.salesperson||"—")+'</td>'+
         '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*100)/100)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
-        '<td>'+escapeHtml(fmtRupiah(saleTotal(r.id)))+'</td>'+
+        '<td style="'+(isRet?'color:var(--danger);':'')+'">'+escapeHtml(fmtRupiah(saleTotal(r.id)*(isRet?-1:1)))+'</td>'+
         '<td>'+((isAdmin()||isOwnRow(r)) ? '<button class="btn-icon" data-action="delete-depo-jual" data-id="'+r.id+'" title="Hapus">✕</button>' : '')+'</td></tr>';
     });
     return html + '</tbody></table></div></div>';
@@ -1228,8 +1250,20 @@
 
   function renderDepoStok(){
     var masuk = {}, keluar = {};
-    state.depoIncomingItems.forEach(function(x){ masuk[x.product] = (masuk[x.product]||0) + Number(x.quantity||0); });
-    state.depoSaleItems.forEach(function(x){ keluar[x.product] = (keluar[x.product]||0) + Number(x.quantity||0); });
+    var incKind = {}; state.depoIncoming.forEach(function(h){ incKind[h.id] = h.kind || "masuk"; });
+    var salKind = {}; state.depoSales.forEach(function(h){ salKind[h.id] = h.kind || "jual"; });
+    state.depoIncomingItems.forEach(function(x){
+      var q = Number(x.quantity||0);
+      // retur ke pabrik keluar dari gudang
+      if(incKind[x.incoming_id] === "retur") keluar[x.product] = (keluar[x.product]||0) + q;
+      else masuk[x.product] = (masuk[x.product]||0) + q;
+    });
+    state.depoSaleItems.forEach(function(x){
+      var q = Number(x.quantity||0);
+      // retur dari outlet kembali masuk gudang
+      if(salKind[x.sale_id] === "retur") masuk[x.product] = (masuk[x.product]||0) + q;
+      else keluar[x.product] = (keluar[x.product]||0) + q;
+    });
     var html = '<div class="card"><h3 style="margin-top:0;">Stok saat ini</h3>';
     html += '<p class="subtext">Stok = total barang masuk dikurangi total terjual. Tasik dan Garut dihitung gabungan.</p>';
     var byCat = {}, order = [];
@@ -1255,7 +1289,10 @@
   function outletBalances(){
     var bal = {}, order = [];
     function touch(o){ if(!(o in bal)){ bal[o] = { jual:0, bayar:0 }; order.push(o); } return bal[o]; }
-    state.depoSales.forEach(function(r){ touch(r.outlet||"—").jual += saleTotal(r.id); });
+    state.depoSales.forEach(function(r){
+      var sign = (r.kind === "retur") ? -1 : 1;
+      touch(r.outlet||"—").jual += saleTotal(r.id) * sign;
+    });
     state.depoPayments.forEach(function(r){ touch(r.outlet||"—").bayar += Number(r.amount||0); });
     order.sort();
     return { rows:bal, order:order };
@@ -1637,12 +1674,14 @@
   }
 
   function isProduksi(){ return role()==="produksi" || role()==="admin"; }
-  function isDepo(){ return role()==="depo" || role()==="admin"; }
+  function isDepo(){ return ["depo","depo_view","depo_manager","admin"].indexOf(role()) !== -1; }
+  function canDepoEdit(){ return ["depo","depo_manager","admin"].indexOf(role()) !== -1; }
+  function canDepoRetur(){ return ["depo_manager","admin"].indexOf(role()) !== -1; }
   function visibleTabs(){
     if(isAdmin()) return ["plastik","produksi","depo","laporan","settings"];
     if(isPurchasing()) return ["plastik","settings"];
     if(role()==="produksi") return ["produksi"];
-    if(role()==="depo") return ["depo"];
+    if(["depo","depo_view","depo_manager"].indexOf(role()) !== -1) return ["depo"];
     return ["plastik"];
   }
 
@@ -1658,7 +1697,7 @@
     document.getElementById("app").innerHTML = renderTab(activeTab);
   }
   function roleLabel(r){
-    return { staff:"Staf produksi", purchasing:"Staf pembelian", admin:"Admin", produksi:"Supervisor produksi", depo:"Staf depo" }[r] || r;
+    return { staff:"Staf produksi", purchasing:"Staf pembelian", admin:"Admin", produksi:"Supervisor produksi", depo:"Staf depo", depo_view:"Depo (lihat stok)", depo_manager:"Kepala gudang depo" }[r] || r;
   }
 
   // ---------- Purchase Order ----------
@@ -1951,8 +1990,10 @@
 
         var headTable = (kind==="depo-masuk") ? "depo_incoming" : "depo_sale";
         var headRow = (kind==="depo-masuk")
-          ? { trx_date:dDate, notes:depoDraft.notes||"", created_by:session.user.id }
-          : { trx_date:dDate, outlet:String(depoDraft.outlet).trim(), salesperson:String(depoDraft.salesperson||"").trim(),
+          ? { trx_date:dDate, kind:(depoDraft.kind==="retur" && canDepoRetur()) ? "retur" : "masuk",
+              notes:depoDraft.notes||"", created_by:session.user.id }
+          : { trx_date:dDate, kind:(depoDraft.kind==="retur" && canDepoRetur()) ? "retur" : "jual",
+              outlet:String(depoDraft.outlet).trim(), salesperson:String(depoDraft.salesperson||"").trim(),
               notes:depoDraft.notes||"", created_by:session.user.id };
         var headIns = await sb.from(headTable).insert(headRow).select().single();
         if(headIns.error) throw headIns.error;
@@ -1968,7 +2009,10 @@
         var itemIns = await sb.from(itemTable).insert(itemRows);
         if(itemIns.error) throw itemIns.error;
 
-        toast(kind==="depo-masuk" ? "Penerimaan disimpan." : "Penjualan disimpan.");
+        var wasRetur = (depoDraft.kind === "retur");
+        toast(kind==="depo-masuk"
+          ? (wasRetur ? "Retur ke pabrik disimpan." : "Penerimaan disimpan.")
+          : (wasRetur ? "Retur dari outlet disimpan." : "Penjualan disimpan."));
         resetDepoDraft();
         await loadAll(); render();
       } else if(kind==="depo-bayar"){
@@ -2374,6 +2418,12 @@
           if(cb) cb.checked = false;
         }
       }
+      return;
+    }
+
+    if(e.target.matches && e.target.matches('form[data-form^="depo-"] [name="kind"]')){
+      captureDepoForm();
+      render();
       return;
     }
 
