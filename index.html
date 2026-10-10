@@ -1154,12 +1154,19 @@
   }
 
   function renderDepo(){
-    var subs = canDepoEdit() ? [
-      { key:"masuk",  label:"Barang Masuk" },
-      { key:"jual",   label:"Penjualan" },
-      { key:"stok",   label:"Stok" },
-      { key:"bayar",  label:"Pembayaran" }
-    ] : [ { key:"stok", label:"Stok" } ];
+    var subs;
+    if(canDepoEdit()){
+      subs = [
+        { key:"masuk",  label:"Barang Masuk" },
+        { key:"jual",   label:"Penjualan" },
+        { key:"stok",   label:"Stok" },
+        { key:"bayar",  label:"Pembayaran" }
+      ];
+    } else if(canDepoSell()){
+      subs = [ { key:"jual", label:"Penjualan" }, { key:"stok", label:"Stok" } ];
+    } else {
+      subs = [ { key:"stok", label:"Stok" } ];
+    }
     if(!subs.some(function(x){ return x.key===depoSub; })) depoSub = subs[0].key;
     var html = '<h2>Depo Tasik + Garut</h2>';
     html += '<div class="btn-row" style="margin-bottom:16px;">' + subs.map(function(x){
@@ -1168,8 +1175,9 @@
     if(!state.depoProducts.length){
       return html + '<div class="card"><div class="empty">Daftar produk depo belum ada. Jalankan dulu supabase_depo.sql dan seed produknya.</div></div>';
     }
+    if(!canDepoEdit() && !canDepoSell()) return html + renderDepoStok();
+    if(depoSub==="jual" && canDepoSell())  return html + renderDepoJual();
     if(!canDepoEdit()) return html + renderDepoStok();
-    if(depoSub==="jual")  return html + renderDepoJual();
     if(depoSub==="stok")  return html + renderDepoStok();
     if(depoSub==="bayar") return html + renderDepoBayar();
     return html + renderDepoMasuk();
@@ -1674,14 +1682,16 @@
   }
 
   function isProduksi(){ return role()==="produksi" || role()==="admin"; }
-  function isDepo(){ return ["depo","depo_view","depo_manager","admin"].indexOf(role()) !== -1; }
+  function isDepo(){ return ["depo","depo_view","depo_sales","depo_manager","admin"].indexOf(role()) !== -1; }
+  // Barang masuk & pembayaran: Heri dan Ati. Penjualan: semua staf depo.
   function canDepoEdit(){ return ["depo","depo_manager","admin"].indexOf(role()) !== -1; }
+  function canDepoSell(){ return ["depo_sales","depo","depo_manager","admin"].indexOf(role()) !== -1; }
   function canDepoRetur(){ return ["depo_manager","admin"].indexOf(role()) !== -1; }
   function visibleTabs(){
     if(isAdmin()) return ["plastik","produksi","depo","laporan","settings"];
     if(isPurchasing()) return ["plastik","settings"];
     if(role()==="produksi") return ["produksi"];
-    if(["depo","depo_view","depo_manager"].indexOf(role()) !== -1) return ["depo"];
+    if(["depo","depo_view","depo_sales","depo_manager"].indexOf(role()) !== -1) return ["depo"];
     return ["plastik"];
   }
 
@@ -1697,7 +1707,7 @@
     document.getElementById("app").innerHTML = renderTab(activeTab);
   }
   function roleLabel(r){
-    return { staff:"Staf produksi", purchasing:"Staf pembelian", admin:"Admin", produksi:"Supervisor produksi", depo:"Staf depo", depo_view:"Depo (lihat stok)", depo_manager:"Kepala gudang depo" }[r] || r;
+    return { staff:"Staf produksi", purchasing:"Staf pembelian", admin:"Admin", produksi:"Supervisor produksi", depo:"Staf depo", depo_view:"Depo (lihat stok)", depo_sales:"Sales depo", depo_manager:"Kepala gudang depo" }[r] || r;
   }
 
   // ---------- Purchase Order ----------
