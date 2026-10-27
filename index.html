@@ -209,7 +209,9 @@
 
   var SUPABASE_URL = "https://wzpssdcvqojqrioikpnr.supabase.co";
   var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6cHNzZGN2cW9qcXJpb2lrcG5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNzY2MjEsImV4cCI6MjEwMzc1MjYyMX0.uoNIcHNXfBErfZ3T7TZzDhY2wTVGN0WOLnxsVu9udmg";
-  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
   var AUTH_DOMAIN = "jangkar.local";
   // domain lama — akun yang belum dipindah tetap bisa masuk
   var LEGACY_AUTH_DOMAIN = "plastikusage.local";
@@ -542,6 +544,51 @@
     }
     if(res.error) throw res.error;
     return res.data.session;
+  }
+
+  // Pastikan token masih berlaku sebelum menyimpan. Token Supabase hanya
+  // bertahan satu jam; kalau halaman dibiarkan terbuka atau laptop tidur,
+  // perpanjangan otomatis bisa gagal dan penyimpanan ditolak (JWT expired).
+  async function ensureSession(){
+    try{
+      var cur = await sb.auth.getSession();
+      var ses = cur && cur.data ? cur.data.session : null;
+      if(!ses) return false;
+      var expiresIn = (Number(ses.expires_at||0) * 1000) - Date.now();
+      if(expiresIn > 120000){ session = ses; return true; }
+      var ref = await sb.auth.refreshSession();
+      if(ref.error || !ref.data || !ref.data.session) return false;
+      session = ref.data.session;
+      return true;
+    } catch(e){ return false; }
+  }
+  var DRAFT_KEY = "jangkar-draft-v1";
+  function persistDrafts(){
+    try{
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        depo: depoDraft, depoSub: depoSub, prod: prodDraft, prodLine: prodLine
+      }));
+    } catch(e){}
+  }
+  function restoreDrafts(){
+    try{
+      var raw = localStorage.getItem(DRAFT_KEY);
+      if(!raw) return;
+      var d = JSON.parse(raw);
+      if(d && d.depo && d.depo.items) depoDraft = d.depo;
+      if(d && d.depoSub) depoSub = d.depoSub;
+      if(d && d.prod) prodDraft = d.prod;
+      if(d && d.prodLine) prodLine = d.prodLine;
+    } catch(e){}
+  }
+  function clearDrafts(){ try{ localStorage.removeItem(DRAFT_KEY); } catch(e){} }
+
+  function isJwtError(err){
+    var m = String((err && (err.message || err.error_description)) || "").toLowerCase();
+    return m.indexOf("jwt") !== -1 || m.indexOf("expired") !== -1 || m.indexOf("token") !== -1;
+  }
+  function sessionLostToast(){
+    toast("Sesi Anda sudah berakhir. Data yang sudah diketik masih tersimpan — silakan muat ulang halaman, masuk lagi, lalu tekan Simpan.", "error");
   }
 
   async function loadProfile(userId){
@@ -942,6 +989,7 @@
     Array.prototype.forEach.call(f.querySelectorAll("[data-out]"), function(el){
       if(el.value !== "") prodDraft.outputs[el.getAttribute("data-out")] = el.value;
     });
+    persistDrafts();
   }
   function prodDraftTotals(){
     var masuk = 0, keluar = 0;
@@ -1078,7 +1126,7 @@
   var depoSub = "masuk";
   var depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", kind:"", items:[] };
 
-  function resetDepoDraft(){ depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", kind:"", items:[] }; }
+  function resetDepoDraft(){ depoDraft = { trx_date:"", outlet:"", salesperson:"", notes:"", kind:"", items:[] }; clearDrafts(); }
   function depoProduct(name){ return state.depoProducts.find(function(x){ return x.name===name; }); }
   function activeDepoProducts(){ return state.depoProducts.filter(function(x){ return x.active!==false; }); }
 
@@ -1118,6 +1166,7 @@
       if(qEl) it.qty     = qEl.value;
       if(hEl) it.price   = hEl.value;
     });
+    persistDrafts();
   }
   function depoDraftTotal(){
     return depoDraft.items.reduce(function(a,it){
@@ -1963,6 +2012,8 @@
     var kind = form.getAttribute("data-form");
     var data = formData(form);
 
+    if(!(await ensureSession())){ sessionLostToast(); return; }
+
     try{
       if(kind==="usage"){
         if(!data.plasticType){ toast("Mohon pilih jenis plastik terlebih dahulu.", "error"); markInvalid(form,"plasticType"); return; }
@@ -2164,7 +2215,8 @@
       }
     } catch(err){
       console.error(err);
-      toast("Gagal menyimpan ("+(err.message||"error")+").", "error");
+      if(isJwtError(err)) sessionLostToast();
+      else toast("Gagal menyimpan ("+(err.message||"error")+").", "error");
     }
   }
 
@@ -2352,7 +2404,8 @@
         openPoView(poIns.data.id);
       } catch(err){
         console.error(err);
-        toast("Gagal menyimpan PO ("+(err.message||"error")+").", "error");
+        if(isJwtError(err)) sessionLostToast();
+        else toast("Gagal menyimpan PO ("+(err.message||"error")+").", "error");
       } finally {
         el.disabled = false;
       }
@@ -2656,10 +2709,18 @@
   async function afterLogin(){
     profile = await loadProfile(session.user.id);
     await loadAll();
+    restoreDrafts();          // kembalikan isian yang belum sempat disimpan
     wireEvents();
     subscribeRealtime();
     showApp();
     render();
+
+    // perbarui token saat tab dibuka lagi, mis. setelah laptop tidur
+    document.addEventListener("visibilitychange", function(){
+      if(!document.hidden) ensureSession();
+    });
+    // dan perpanjang berkala selama tab terbuka
+    setInterval(function(){ ensureSession(); }, 10 * 60 * 1000);
   }
 
   document.getElementById("login-form").addEventListener("submit", async function(e){
