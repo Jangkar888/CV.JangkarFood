@@ -1182,7 +1182,7 @@
       var pr = depoProduct(it.product);
       var sub = Number(it.qty||0) * Number(it.price||0);
       html += '<tr><td><select data-role="depo-prod" data-key="'+it.key+'" style="min-width:200px;">'+depoProductOptions(it.product)+'</select></td>'+
-        '<td><input type="number" step="1" min="0" data-role="depo-qty" data-key="'+it.key+'" value="'+escapeHtml(String(it.qty||""))+'" style="width:90px;"> <span class="subtext">'+escapeHtml(pr?pr.unit:"")+'</span></td>'+
+        '<td><input type="number" step="0.1" min="0" data-role="depo-qty" data-key="'+it.key+'" value="'+escapeHtml(String(it.qty||""))+'" style="width:90px;"> <span class="subtext">'+escapeHtml(pr?pr.unit:"")+'</span></td>'+
         '<td><input type="number" step="1" min="0" data-role="depo-price" data-key="'+it.key+'" value="'+escapeHtml(String(it.price||""))+'" style="width:120px;"></td>'+
         '<td>'+escapeHtml(fmtRupiah(sub))+'</td>'+
         '<td><button class="btn-icon" type="button" data-action="depo-del-item" data-key="'+it.key+'" title="Hapus baris">✕</button></td></tr>';
@@ -1258,7 +1258,7 @@
       var tot = incomingTotal(r.id) * (isRetur ? -1 : 1);
       html += '<tr><td>'+escapeHtml(fmtTanggal(r.trx_date))+'</td>'+
         '<td>'+(isRetur ? '<span style="color:var(--danger);font-weight:600;">Retur pabrik</span>' : 'Masuk')+'</td>'+
-        '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*100)/100)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
+        '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*10)/10)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
         '<td style="'+(isRetur?'color:var(--danger);':'')+'">'+escapeHtml(fmtRupiah(tot))+'</td>'+
         '<td>'+escapeHtml(r.notes||"")+'</td>'+
         '<td>'+((isAdmin()||isOwnRow(r)) ? '<button class="btn-icon" data-action="delete-depo-masuk" data-id="'+r.id+'" title="Hapus">✕</button>' : '')+'</td></tr>';
@@ -1298,7 +1298,7 @@
         '<td>'+(isRet ? '<span style="color:var(--danger);font-weight:600;">Retur outlet</span>' : 'Jual')+'</td>'+
         '<td>'+escapeHtml(r.outlet||"")+'</td>'+
         '<td>'+escapeHtml(r.salesperson||"—")+'</td>'+
-        '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*100)/100)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
+        '<td>'+items.map(function(x){ return escapeHtml(x.product)+' <span class="subtext">'+(Math.round(Number(x.quantity||0)*10)/10)+' '+escapeHtml(x.unit||"")+'</span>'; }).join('<br>')+'</td>'+
         '<td style="'+(isRet?'color:var(--danger);':'')+'">'+escapeHtml(fmtRupiah(saleTotal(r.id)*(isRet?-1:1)))+'</td>'+
         '<td>'+((isAdmin()||isOwnRow(r)) ? '<button class="btn-icon" data-action="delete-depo-jual" data-id="'+r.id+'" title="Hapus">✕</button>' : '')+'</td></tr>';
     });
@@ -1334,10 +1334,11 @@
       html += '<tr class="cat-row"><td colspan="4">'+escapeHtml(c)+'</td></tr>';
       byCat[c].forEach(function(pr){
         var m = masuk[pr.name]||0, k = keluar[pr.name]||0, sisa = m - k;
+        function num(v){ return String(Math.round(Number(v)*10)/10).replace(".", ","); }
         html += '<tr><td>'+escapeHtml(pr.name)+'</td>'+
-          '<td>'+m+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td>'+
-          '<td>'+k+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td>'+
-          '<td style="font-weight:600;color:'+(sisa<0?'var(--danger)':'var(--text)')+';">'+sisa+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td></tr>';
+          '<td>'+num(m)+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td>'+
+          '<td>'+num(k)+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td>'+
+          '<td style="font-weight:600;color:'+(sisa<0?'var(--danger)':'var(--text)')+';">'+num(sisa)+' <span class="subtext">'+escapeHtml(pr.unit)+'</span></td></tr>';
       });
     });
     return html + '</tbody></table></div></div>';
@@ -1406,7 +1407,7 @@
         open.forEach(function(x){
           var items = state.depoSaleItems.filter(function(y){ return y.sale_id===x.sale.id; });
           html += '<tr><td>'+escapeHtml(fmtTanggal(x.sale.trx_date))+'</td>'+
-            '<td>'+items.map(function(y){ return escapeHtml(y.product)+' <span class="subtext">'+(Math.round(Number(y.quantity||0)*100)/100)+' '+escapeHtml(y.unit||"")+'</span>'; }).join('<br>')+'</td>'+
+            '<td>'+items.map(function(y){ return escapeHtml(y.product)+' <span class="subtext">'+(Math.round(Number(y.quantity||0)*10)/10)+' '+escapeHtml(y.unit||"")+'</span>'; }).join('<br>')+'</td>'+
             '<td>'+escapeHtml(fmtRupiah(x.total))+'</td>'+
             '<td>'+escapeHtml(fmtRupiah(x.paid))+'</td>'+
             '<td style="color:var(--danger);font-weight:600;">'+escapeHtml(fmtRupiah(x.sisa))+'</td>'+
@@ -2120,7 +2121,7 @@
 
         var itemRows = rows.map(function(it){
           var pr = depoProduct(it.product) || {};
-          var q = Number(it.qty||0), h = Number(it.price||0);
+          var q = Math.round(Number(it.qty||0)*10)/10, h = Number(it.price||0);
           var base = { product:it.product, quantity:q, unit:pr.unit||"", unit_price:h, subtotal:q*h };
           if(kind==="depo-masuk") base.incoming_id = headIns.data.id; else base.sale_id = headIns.data.id;
           return base;
