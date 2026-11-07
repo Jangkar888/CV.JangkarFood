@@ -1249,8 +1249,13 @@
     html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan</button></div></form></div>';
 
     html += '<div class="card"><h3 style="margin-top:0;">Penerimaan terakhir</h3>';
-    var rows = state.depoIncoming.slice(0,40);
-    if(!rows.length) return html + '<div class="empty">Belum ada penerimaan.</div></div>';
+    var allInc = state.depoIncoming.filter(function(r){
+      return depoMatches(r, state.depoIncomingItems.filter(function(x){ return x.incoming_id===r.id; }));
+    });
+    var rows = allInc.slice(0,200);
+    html += depoSearchBox("Cari produk, catatan, atau tanggal…");
+    if(!rows.length) return html + '<div class="empty">'+(depoFilter ? 'Tidak ada penerimaan yang cocok.' : 'Belum ada penerimaan.')+'</div></div>';
+    if(allInc.length > rows.length) html += '<p class="subtext">Menampilkan '+rows.length+' dari '+allInc.length+' catatan.</p>';
     html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Barang</th><th>Total</th><th>Catatan</th><th></th></tr></thead><tbody>';
     rows.forEach(function(r){
       var items = state.depoIncomingItems.filter(function(x){ return x.incoming_id===r.id; });
@@ -1288,8 +1293,13 @@
     html += '<div class="btn-row" style="margin-top:12px;"><button class="btn" type="submit">Simpan</button></div></form></div>';
 
     html += '<div class="card"><h3 style="margin-top:0;">Penjualan terakhir</h3>';
-    var rows = state.depoSales.slice(0,40);
-    if(!rows.length) return html + '<div class="empty">Belum ada penjualan.</div></div>';
+    var allSales = state.depoSales.filter(function(r){
+      return depoMatches(r, state.depoSaleItems.filter(function(x){ return x.sale_id===r.id; }));
+    });
+    var rows = allSales.slice(0,200);
+    html += depoSearchBox("Cari outlet, sales, atau produk…");
+    if(!rows.length) return html + '<div class="empty">'+(depoFilter ? 'Tidak ada penjualan yang cocok.' : 'Belum ada penjualan.')+'</div></div>';
+    if(allSales.length > rows.length) html += '<p class="subtext">Menampilkan '+rows.length+' dari '+allSales.length+' catatan. Gunakan kotak pencarian untuk mempersempit.</p>';
     html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Outlet</th><th>Sales</th><th>Barang</th><th>Total</th><th></th></tr></thead><tbody>';
     rows.forEach(function(r){
       var items = state.depoSaleItems.filter(function(x){ return x.sale_id===r.id; });
@@ -1357,6 +1367,22 @@
   }
 
   var depoPayOutlet = "";
+  var depoFilter = "";   // cari berdasarkan outlet, sales, produk atau tanggal
+
+  function depoSearchBox(placeholder){
+    return '<div class="field" style="max-width:320px;margin-bottom:12px;">' +
+           '<input type="text" data-role="depo-filter" value="'+escapeHtml(depoFilter)+'" placeholder="'+escapeHtml(placeholder)+'">' +
+           '</div>';
+  }
+  // cocokkan kata kunci dengan kepala catatan maupun nama produk di dalamnya
+  function depoMatches(head, items){
+    var q = depoFilter.trim().toLowerCase();
+    if(!q) return true;
+    var hay = [head.outlet||"", head.salesperson||"", head.notes||"", head.trx_date||"", fmtTanggal(head.trx_date)]
+      .concat(items.map(function(x){ return x.product||""; }))
+      .join(" ").toLowerCase();
+    return q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
+  }
 
   // Pembayaran dan retur dipakai menutup faktur mulai dari yang paling lama.
   function outletInvoices(outlet){
@@ -1440,7 +1466,11 @@
     html += '</tbody></table></div></div>';
 
     html += '<div class="card"><h3 style="margin-top:0;">Pembayaran terakhir</h3>';
-    var pays = state.depoPayments.slice(0,40);
+    var pays = state.depoPayments.filter(function(r){
+      var q = depoFilter.trim().toLowerCase();
+      if(!q) return true;
+      return ((r.outlet||"")+" "+(r.notes||"")+" "+(r.pay_date||"")).toLowerCase().indexOf(q) !== -1;
+    }).slice(0,200);
     if(!pays.length) return html + '<div class="empty">Belum ada pembayaran.</div></div>';
     html += '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Outlet</th><th>Cara bayar</th><th>Jumlah</th><th>Catatan</th><th></th></tr></thead><tbody>';
     pays.forEach(function(r){
@@ -2548,6 +2578,12 @@
           if(cb) cb.checked = false;
         }
       }
+      return;
+    }
+
+    if(e.target.matches && e.target.matches('[data-role="depo-filter"]')){
+      depoFilter = e.target.value;
+      render();
       return;
     }
 
